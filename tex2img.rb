@@ -18,15 +18,18 @@ class Tex2img < Formula
   def install
     libexec.install "tex2img"
 
-    # 古いGUIアプリの同梱ツールより、Homebrewの依存ツールを優先する。
-    # install_symlinkはoptを版固定のCellarパスへ解決するため使用しない。
-    # 依存パッケージの更新・旧版削除後もopt経由で新しい版を参照する。
+    # TeX2imgはPATHを探す前に、GUIアプリ内のpdftopsやmudrawを見つける場合がある。
+    # Homebrew版を確実に使うため、最初に探すCLI自身の近くにリンクを置く。
+    # リンク先には、Homebrewが更新のたびに新しい版へ向け直すoptのパスを使う。
+    # install_symlinkだと、optの先にある特定バージョンの保存先へリンクされてしまい、
+    # その版の削除時にリンクが切れる。make_symlinkならoptへのリンクを作れる。
     (libexec/"pdftops").mkpath
     (libexec/"mupdf").mkpath
     (libexec/"pdftops/pdftops").make_symlink formula_opt_bin("poppler")/"pdftops"
     (libexec/"mupdf/mudraw").make_symlink formula_opt_bin("mupdf-tools")/"mudraw"
 
-    # TeX環境のPATHを引き継ぎつつ、GhostscriptはHomebrew版を使う。
+    # gsはHomebrew版が先に見つかるよう、実行時のPATHの先頭にその場所を追加する。
+    # platexなども見つかるよう、ユーザーが設定したPATHをその後ろにつなげる。
     (bin/"tex2img").write_env_script libexec/"tex2img",
       PATH: "#{formula_opt_bin("ghostscript")}:$PATH"
   end
@@ -45,14 +48,19 @@ class Tex2img < Formula
   end
 
   test do
+    # インストール後もリンク先がoptを経由していることを確認する。
+    # 特定バージョンの保存先に固定されると、依存ツールの更新後に使えなくなるため。
     { "pdftops/pdftops" => "poppler", "mupdf/mudraw" => "mupdf-tools" }.each do |tool, dependency|
       link = libexec/tool
       assert_equal formula_opt_bin(dependency)/link.basename, link.readlink.expand_path(link.dirname)
     end
     assert_match "tex2img Ver.#{version}", shell_output("#{bin}/tex2img --version")
 
-    # PDF入力でもTeX系ツールの存在確認があるため、未使用の拒否スタブを置く。
-    # 呼び出されれば失敗させ、TeXを使わない変換経路であることも検査する。
+    # このテストはPDFを画像に変換するだけなので、TeXのコンパイルは必要ない。
+    # ただしTeX2imgは起動時に、TeXコンパイラ・DVIドライバ・epstopdfがあるか確認する。
+    # TeX環境をインストールせずにテストできるよう、それらの代わりにダミーを指定する。
+    # ダミーは実行されるとエラーで終了する。変換が成功すれば、TeX系ツールを
+    # 実際には使わずにPDFを変換できたことも確認できる。
     (testpath/"unused-tex-tool").write "#!/bin/sh\nexit 1\n"
     (testpath/"unused-tex-tool").chmod 0755
     (testpath/"epstopdf").make_symlink testpath/"unused-tex-tool"
